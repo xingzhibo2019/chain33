@@ -14,7 +14,7 @@ import (
 )
 
 // New new consensus queue module
-func New(cfg *types.Chain33Config) queue.Module {
+func New(cfg *types.Chain33Config) queue.Module { //被chain33调用，通过cfg读取配置，会返回一个共识队列模块，module是queue的一个属性接口
 	mcfg := cfg.GetModuleConfig().Consensus
 	sub := cfg.GetSubConfig().Consensus
 	con, err := consensus.Load(mcfg.Name)

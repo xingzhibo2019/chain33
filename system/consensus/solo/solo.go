@@ -99,22 +99,22 @@ func (client *Client) CheckBlock(parent *types.Block, current *types.BlockDetail
 func (client *Client) CreateBlock() {
 	issleep := true
 	types.AssertConfig(client.GetAPI())
-	cfg := client.GetAPI().GetConfig()
+	cfg := client.GetAPI().GetConfig() //获取配置
 	for {
-		if client.IsClosed() {
+		if client.IsClosed() { //已经关闭则退出线程
 			break
 		}
-		if !client.IsMining() || !client.IsCaughtUp() {
+		if !client.IsMining() || !client.IsCaughtUp() { //未在挖矿或未取得最新区块则休眠
 			time.Sleep(client.sleepTime)
 			continue
 		}
-		if issleep {
+		if issleep { //等待足够多的交易
 			time.Sleep(client.sleepTime)
 		}
-		lastBlock := client.GetCurrentBlock()
+		lastBlock := client.GetCurrentBlock() //获取当前区块
 		maxTxNum := int(cfg.GetP(lastBlock.Height + 1).MaxTxNumber)
-		txs := client.RequestTx(maxTxNum, nil)
-		txs = client.CheckTxDup(txs)
+		txs := client.RequestTx(maxTxNum, nil) //EventTxList，system.consensus.base，获取交易池中的交易列表
+		txs = client.CheckTxDup(txs)           //system.consensus.base，获取排完序的交易列表
 
 		// 为方便测试，设定基准测试模式，每个块交易数保持恒定，为配置的最大交易数
 		if len(txs) == 0 || (client.subcfg.BenchMode && len(txs) < maxTxNum) {
@@ -134,7 +134,7 @@ func (client *Client) CreateBlock() {
 		if cfg.IsFork(newblock.GetHeight(), "ForkRootHash") {
 			newblock.Txs = types.TransactionSort(newblock.Txs)
 		}
-		newblock.TxHash = merkle.CalcMerkleRoot(cfg, newblock.Height, newblock.Txs)
+		newblock.TxHash = merkle.CalcMerkleRoot(cfg, newblock.Height, newblock.Txs) //挖矿计算
 		newblock.BlockTime = types.Now().Unix()
 		if lastBlock.BlockTime >= newblock.BlockTime {
 			newblock.BlockTime = lastBlock.BlockTime + 1

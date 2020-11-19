@@ -45,7 +45,7 @@ type Miner interface {
 }
 
 //BaseClient ...
-type BaseClient struct {
+type BaseClient struct { //包含一个client，client包含一个queue指针，能得到其module？
 	client       queue.Client
 	api          client.QueueProtocolAPI
 	minerStart   int32
@@ -128,19 +128,19 @@ func (bc *BaseClient) InitMiner() {
 func (bc *BaseClient) Wait() {}
 
 //SetQueueClient 设置客户端队列
-func (bc *BaseClient) SetQueueClient(c queue.Client) {
-	bc.InitClient(c, func() {
+func (bc *BaseClient) SetQueueClient(c queue.Client) { //设置客户端队列时会初始化client和block
+	bc.InitClient(c, func() { //初始化一个client，包括设置clinet和消息交互接口
 		//call init block
-		bc.InitBlock()
+		bc.InitBlock() //在初始化miner时写入一个创世区块
 	})
-	go bc.EventLoop()
-	go bc.child.CreateBlock()
+	go bc.EventLoop()         //并发执行，本文件内，用于处理接收到的各种消息
+	go bc.child.CreateBlock() //并发执行，或许是system.consensus.solo.solo？是矿工产生区块的策略
 }
 
 //InitBlock change init block
 func (bc *BaseClient) InitBlock() {
 	cfg := bc.client.GetConfig()
-	block, err := bc.RequestLastBlock()
+	block, err := bc.RequestLastBlock() //EventGetLastBlock
 	if err != nil {
 		panic(err)
 	}
@@ -158,7 +158,7 @@ func (bc *BaseClient) InitBlock() {
 			types.AssertConfig(bc.client)
 			newblock.Difficulty = cfg.GetP(0).PowLimitBits
 		}
-		err := bc.WriteBlock(zeroHash[:], newblock)
+		err := bc.WriteBlock(zeroHash[:], newblock) //EventAddBlockDetail
 		if err != nil {
 			panic(err)
 		}
@@ -182,13 +182,13 @@ func (bc *BaseClient) IsClosed() bool {
 
 //CheckTxDup 为了不引起交易检查时候产生的无序
 func (bc *BaseClient) CheckTxDup(txs []*types.Transaction) (transactions []*types.Transaction) {
-	cacheTxs := types.TxsToCache(txs)
+	cacheTxs := types.TxsToCache(txs) //把交易都放到cache里
 	var err error
-	cacheTxs, err = util.CheckTxDup(bc.client, cacheTxs, 0)
-	if err != nil {
+	cacheTxs, err = util.CheckTxDup(bc.client, cacheTxs, 0) //util.exec
+	if err != nil {                                         //发生错误就不排序了
 		return txs
 	}
-	return types.CacheToTxs(cacheTxs)
+	return types.CacheToTxs(cacheTxs) //把排完序的交易列表拿出来
 }
 
 //IsMining 是否在挖矿
@@ -202,7 +202,7 @@ func (bc *BaseClient) IsCaughtUp() bool {
 		panic("bc not bind message queue.")
 	}
 	msg := bc.client.NewMessage("blockchain", types.EventIsSync, nil)
-	err := bc.client.Send(msg, true)
+	err := bc.client.Send(msg, true) //向区块链发送请求同步信息
 	if err != nil {
 		return false
 	}
@@ -225,11 +225,11 @@ func (bc *BaseClient) ExecConsensus(data *types.ChainExecutor) (types.Message, e
 //EventLoop 准备新区块
 func (bc *BaseClient) EventLoop() {
 	// 监听blockchain模块，获取当前最高区块
-	bc.client.Sub("consensus")
+	bc.client.Sub("consensus") //对名为“consensus”的频道进行监听
 	go func() {
-		for msg := range bc.client.Recv() {
+		for msg := range bc.client.Recv() { //处理上面client监听到的消息
 			tlog.Debug("consensus recv", "msg", msg)
-			if msg.Ty == types.EventConsensusQuery {
+			if msg.Ty == types.EventConsensusQuery { //client发来，返回消息编码后的结果？编码过程好复杂。。就当是编码结果吧
 				exec := msg.GetData().(*types.ChainExecutor)
 				param, err := QueryData.Decode(exec.Driver, exec.FuncName, exec.Param)
 				if err != nil {
@@ -242,36 +242,36 @@ func (bc *BaseClient) EventLoop() {
 				} else {
 					msg.Reply(bc.api.NewMessage("", 0, reply))
 				}
-			} else if msg.Ty == types.EventAddBlock {
+			} else if msg.Ty == types.EventAddBlock { //blockchain发来，将发来的区块设置为当前区块
 				block := msg.GetData().(*types.BlockDetail).Block
 				bc.SetCurrentBlock(block)
-				bc.child.AddBlock(block)
-			} else if msg.Ty == types.EventCheckBlock {
+				bc.child.AddBlock(block) //无处理？
+			} else if msg.Ty == types.EventCheckBlock { //blockchain发来，检查发来的区块是否合法
 				block := msg.GetData().(*types.BlockDetail)
 				err := bc.CheckBlock(block)
 				msg.ReplyErr("EventCheckBlock", err)
-			} else if msg.Ty == types.EventMinerStart {
+			} else if msg.Ty == types.EventMinerStart { //外部发来？初始化矿工，调用只执行一次的（初始化区块）函数
 				if !atomic.CompareAndSwapInt32(&bc.minerStart, 0, 1) {
 					msg.ReplyErr("EventMinerStart", types.ErrMinerIsStared)
 				} else {
 					bc.InitMiner()
 					msg.ReplyErr("EventMinerStart", nil)
 				}
-			} else if msg.Ty == types.EventMinerStop {
+			} else if msg.Ty == types.EventMinerStop { //外部发来？无操作？
 				if !atomic.CompareAndSwapInt32(&bc.minerStart, 1, 0) {
 					msg.ReplyErr("EventMinerStop", types.ErrMinerNotStared)
 				} else {
 					msg.ReplyErr("EventMinerStop", nil)
 				}
-			} else if msg.Ty == types.EventDelBlock {
+			} else if msg.Ty == types.EventDelBlock { //blockchain发来，block无意义，更新当前区块
 				block := msg.GetData().(*types.BlockDetail).Block
 				bc.UpdateCurrentBlock(block)
-			} else if msg.Ty == types.EventCmpBestBlock {
+			} else if msg.Ty == types.EventCmpBestBlock { //内部发来的？cmpblock是待比较的块，返回比较结果
 				var reply types.Reply
 				cmpBlock := msg.GetData().(*types.CmpBlock)
 				reply.IsOk = bc.CmpBestBlock(cmpBlock.Block, cmpBlock.CmpHash)
 				msg.Reply(bc.api.NewMessage("", 0, &reply))
-			} else {
+			} else { //未定义的消息
 				if !bc.child.ProcEvent(msg) {
 					msg.ReplyErr("BaseClient.EventLoop() ", types.ErrActionNotSupport)
 				}
@@ -286,12 +286,12 @@ func (bc *BaseClient) CheckBlock(block *types.BlockDetail) error {
 	if block.Block.Height <= 0 { //genesis block not check
 		return nil
 	}
-	parent, err := bc.RequestBlock(block.Block.Height - 1)
-	if err != nil {
+	parent, err := bc.RequestBlock(block.Block.Height - 1) //向blockchain请求当前块-1高度的区块，EventGetBlocks
+	if err != nil {                                        //检查父区块是否相同
 		return err
 	}
 	//check base info
-	if parent.Height+1 != block.Block.Height {
+	if parent.Height+1 != block.Block.Height { //检查当前高度是否合法
 		return types.ErrBlockHeight
 	}
 	types.AssertConfig(bc.client)
@@ -300,7 +300,7 @@ func (bc *BaseClient) CheckBlock(block *types.BlockDetail) error {
 		return types.ErrBlockTime
 	}
 	//check parent hash
-	if string(block.Block.GetParentHash()) != string(parent.Hash(cfg)) {
+	if string(block.Block.GetParentHash()) != string(parent.Hash(cfg)) { //检查哈希链是否正确
 		return types.ErrParentHash
 	}
 	//check block size and tx count
@@ -318,7 +318,7 @@ func (bc *BaseClient) CheckBlock(block *types.BlockDetail) error {
 }
 
 //RequestTx Mempool中取交易列表
-func (bc *BaseClient) RequestTx(listSize int, txHashList [][]byte) []*types.Transaction {
+func (bc *BaseClient) RequestTx(listSize int, txHashList [][]byte) []*types.Transaction { //请求包含一定数量交易的交易列表
 	if bc.client == nil {
 		panic("bc not bind message queue.")
 	}
@@ -339,8 +339,8 @@ func (bc *BaseClient) RequestBlock(start int64) (*types.Block, error) {
 	if bc.client == nil {
 		panic("bc not bind message queue.")
 	}
-	reqblock := &types.ReqBlocks{Start: start, End: start, IsDetail: false, Pid: []string{""}}
-	msg := bc.client.NewMessage("blockchain", types.EventGetBlocks, reqblock)
+	reqblock := &types.ReqBlocks{Start: start, End: start, IsDetail: false, Pid: []string{""}} //只请求一个区块
+	msg := bc.client.NewMessage("blockchain", types.EventGetBlocks, reqblock)                  //按高度请求
 	err := bc.client.Send(msg, true)
 	if err != nil {
 		return nil, err
@@ -358,7 +358,7 @@ func (bc *BaseClient) RequestLastBlock() (*types.Block, error) {
 	if bc.client == nil {
 		panic("client not bind message queue.")
 	}
-	msg := bc.client.NewMessage("blockchain", types.EventGetLastBlock, nil)
+	msg := bc.client.NewMessage("blockchain", types.EventGetLastBlock, nil) //请求最新的一个区块
 	err := bc.client.Send(msg, true)
 	if err != nil {
 		return nil, err
@@ -374,7 +374,7 @@ func (bc *BaseClient) RequestLastBlock() (*types.Block, error) {
 //del mempool
 func (bc *BaseClient) delMempoolTx(deltx []*types.Transaction) error {
 	hashList := buildHashList(deltx)
-	msg := bc.client.NewMessage("mempool", types.EventDelTxList, hashList)
+	msg := bc.client.NewMessage("mempool", types.EventDelTxList, hashList) //向mempool请求删除一个交易的哈希列表
 	err := bc.client.Send(msg, true)
 	if err != nil {
 		return err
@@ -404,7 +404,7 @@ func (bc *BaseClient) WriteBlock(prev []byte, block *types.Block) error {
 	copy(rawtxs, block.Txs)
 
 	blockdetail := &types.BlockDetail{Block: block}
-	msg := bc.client.NewMessage("blockchain", types.EventAddBlockDetail, blockdetail)
+	msg := bc.client.NewMessage("blockchain", types.EventAddBlockDetail, blockdetail) //向区块链提交区块
 	err := bc.client.Send(msg, true)
 	if err != nil {
 		return err
@@ -415,9 +415,9 @@ func (bc *BaseClient) WriteBlock(prev []byte, block *types.Block) error {
 	}
 	blockdetail = resp.GetData().(*types.BlockDetail)
 	//从mempool 中删除错误的交易
-	deltx := diffTx(rawtxs, blockdetail.Block.Txs)
+	deltx := diffTx(rawtxs, blockdetail.Block.Txs) //找到与提交后返回结果不同的交易
 	if len(deltx) > 0 {
-		err := bc.delMempoolTx(deltx)
+		err := bc.delMempoolTx(deltx) //EventDelTxList
 		if err != nil {
 			return err
 		}
@@ -477,7 +477,7 @@ func (bc *BaseClient) SetCurrentBlock(b *types.Block) {
 func (bc *BaseClient) UpdateCurrentBlock(b *types.Block) {
 	bc.mulock.Lock()
 	defer bc.mulock.Unlock()
-	block, err := bc.RequestLastBlock()
+	block, err := bc.RequestLastBlock() //EventGetLastBlock
 	if err != nil {
 		log.Error("UpdateCurrentBlock", "RequestLastBlock", err)
 		return

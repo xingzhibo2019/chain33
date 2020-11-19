@@ -244,12 +244,12 @@ func (client *client) Sub(topic string) {
 	}
 	client.wg.Add(1)
 	client.setTopic(topic)
-	sub := client.q.chanSub(topic)
+	sub := client.q.chanSub(topic) //根据topic获取chanSub
 	go func() {
 		defer func() {
 			client.wg.Done()
 		}()
-		for {
+		for { // 循环读取订阅的通道里的消息，存到data里面
 			select {
 			case data, ok := <-sub.high:
 				if client.isEnd(data, ok) {

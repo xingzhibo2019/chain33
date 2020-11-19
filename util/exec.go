@@ -166,7 +166,7 @@ func CheckTxDup(client queue.Client, txs []*types.TransactionCache, height int64
 	}
 	checkHashList.Count = height
 	hashList := client.NewMessage("blockchain", types.EventTxHashList, &checkHashList)
-	err = client.Send(hashList, true)
+	err = client.Send(hashList, true) //向blockchain请求交易哈希的列表
 	if err != nil {
 		log.Error("send", "to blockchain EventTxHashList msg err", err)
 		return nil, err

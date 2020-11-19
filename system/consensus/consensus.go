@@ -19,7 +19,7 @@ var regConsensus = make(map[string]Create)
 var QueryData = types.NewQueryData("Query_")
 
 //Reg ...
-func Reg(name string, create Create) {
+func Reg(name string, create Create) { //用于存储共识和字符的对应
 	if create == nil {
 		panic("Consensus: Register driver is nil")
 	}
@@ -30,7 +30,7 @@ func Reg(name string, create Create) {
 }
 
 //Load 加载
-func Load(name string) (create Create, err error) {
+func Load(name string) (create Create, err error) { //用于获取共识和字符的对应
 	if driver, ok := regConsensus[name]; ok {
 		return driver, nil
 	}

@@ -175,8 +175,8 @@ func RunChain33(name, defCfg string) {
 	chain.Upgrade()
 
 	log.Info("loading consensus module")
-	cs := consensus.New(chain33Cfg)
-	cs.SetQueueClient(q.Client())
+	cs := consensus.New(chain33Cfg) //通过配置来初始化一个共识队列模块
+	cs.SetQueueClient(q.Client())   //为共识队列模块设置一个client用于收发消息，system.consensus.base
 
 	//jsonrpc, grpc, channel 三种模式
 	rpcapi := rpc.New(chain33Cfg)
